@@ -1,0 +1,55 @@
+name: Deploy H5 Game to Qiniu
+
+on:
+  push:
+    branches: ["master"]
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Qshell
+        env:
+          QINIU_AK: ${{ secrets.QINIU_AK || vars.QINIU_AK }}
+          QINIU_SK: ${{ secrets.QINIU_SK || vars.QINIU_SK }}
+        run: |
+          if [[ -z "$QINIU_AK" || -z "$QINIU_SK" ]]; then
+            echo "::error::QINIU_AK and QINIU_SK must be configured as secrets or variables."
+            exit 1
+          fi
+          # 下载并安装 qshell CLI
+          wget -q https://devtools.qiniu.com/qshell-v2.13.0-linux-amd64.tar.gz
+          tar -zxf qshell-v2.13.0-linux-amd64.tar.gz
+          sudo mv qshell /usr/local/bin/qshell
+          # 配置鉴权账号
+          qshell account "$QINIU_AK" "$QINIU_SK" qiniu-deploy-user
+
+      - name: Upload to Qiniu Kodo
+        env:
+          QINIU_BUCKET: ${{ secrets.QINIU_BUCKET || vars.QINIU_BUCKET }}
+        run: |
+          if [[ -z "$QINIU_BUCKET" ]]; then
+            echo "::error::QINIU_BUCKET must be configured as a secret or variable."
+            exit 1
+          fi
+
+          if [[ ! -d "dist" ]]; then
+            echo "::error::Directory 'dist' not found in repository. Please make sure it is committed."
+            exit 1
+          fi
+
+          # 上传 dist 目录到存储桶根路径
+          qshell qupload2 \
+            --src-dir=dist \
+            --bucket="$QINIU_BUCKET" \
+            --key-prefix="" \
+            --overwrite \
+            --rescan-local \
+            --skip-fixed-strings=".DS_Store"
